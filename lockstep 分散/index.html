@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>カーレース</title>
+    <meta charset="UTF-8" />
+    <style>
+      /*画像をかぶせて表示させる。*/
+      .canvas-wrapper {
+        position: relative;
+      }
+      .canvas-wrapper canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <script src="socket.io/socket.io.js"></script>
+    <canvas id="view" width="700px" height="500px"></canvas>
+    <script type="text/javascript">
+      var canvas = document.getElementById("view"); //canvasAPI使うためのやつ。絵が使えるも
+      var ctx = canvas.getContext("2d");
+      //ctxを使用するための変数
+      const chara = new Image();
+
+      var socket = io.connect(); //node.jsを利用するための変数
+
+      //移動量
+      let speed = 0.0;
+      //移動限界量
+      let limit = 5.0;
+      //キーボードの認識[w,s,a,d]
+      let key_move = [0, 0, 0, 0];
+      //描画速度
+      const fps = 100;
+      //
+      let chara_member = [];
+
+      const chara_info = function (no,x,y,angle,image_name,size_width,size_height) {
+        this.no = no;
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.image_name = image_name;
+        this.size_width = size_width;
+        this.size_height = size_height;
+      };
+
+      function chara_add(no,x,y,angle,image_name,size_width,size_height){
+        chara_member.push();
+        chara_member[chara_member.length - 1] = new chara_info(no,) 
+      }
+      
+      let sample = new chara_info(1, 100, 100, 0, "mycar.png", 40, 30);
+      chara_member.add(sample);
+      
+      //描画
+      function draw_player(player) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(player.x + player.size_width / 2,player.y + player.size_height / 2);
+        ctx.rotate(player.angle);
+        ctx.translate(-player.x - player.size_width / 2,-player.y - player.size_height / 2);
+        chara.src = player.image_name;
+        ctx.drawImage(chara, player.x, player.y);
+        ctx.restore();
+
+        const myh1 = document.getElementById("sokudo");
+        myh1.innerHTML = "エンジン:" +Math.floor(speed * 100) / 100 + " 方向:" + Math.floor((sample.angle / Math.PI) * 180) +
+          "゜";
+
+        const myh2 = document.getElementById("zahyou");
+        myh2.innerHTML = "X:" + parseInt(sample.x) + " Y:" + parseInt(sample.y);
+      }
+
+      //移動(操作キャラ限定)
+      function move() {
+        sample.y -= speed * Math.cos(sample.angle);
+        sample.x += speed * Math.sin(sample.angle);
+        if (sample.x < sample.size_width / 2) {
+          sample.x++;
+          speed -= 0.4;
+        }
+        if (sample.x > canvas.width - sample.size_width) {
+          sample.x--;
+          speed -= 0.4;
+        }
+        if (sample.y < sample.size_height) {
+          sample.y++;
+          speed -= 0.4;
+        }
+        if (sample.y > canvas.height - sample.size_height) {
+          sample.y--;
+          speed -= 0.4;
+        }
+        if (key_move[2] == 1) sample.angle -= 0.05;
+        if (key_move[3] == 1) sample.angle += 0.05;
+      }
+
+      //加速(操作キャラ限定)
+      function Accelerat() {
+        if (key_move[0] == 1 && speed < limit) speed += 0.2;
+        if (key_move[0] == 0 && speed > 0.0) speed -= 0.5;
+        if (speed <= 0) speed = 0;
+      }
+
+      // キーボードを押したときに実行される関数
+      document.onkeydown = function (e) {
+        //A key
+        if (e.keyCode == 65) key_move[2] = 1;
+        //D key
+        if (e.keyCode == 68) key_move[3] = 1;
+        //W key
+        if (e.keyCode == 87) key_move[0] = 1;
+
+        if (e.keyCode == 83); //Skey
+        if (e.keyCode == 68); //→ key
+        if (e.keyCode == 83); //↓ key
+      };
+
+      // キーボードを離したときに実行される関数
+      document.onkeyup = function (e) {
+        //A key
+        if (e.keyCode == 65) key_move[2] = 0;
+        //S key
+        if (e.keyCode == 83) key_move[1] = 0;
+        //D key
+        if (e.keyCode == 68) key_move[3] = 0;
+        //W key
+        if (e.keyCode == 87) key_move[0] = 0;
+      };
+
+      window.onload = function () {
+        
+        draw_player(sample);
+        setInterval(function () {draw_player(sample);}, fps / 1000);
+        setInterval(move, fps / 1000);
+        setInterval(Accelerat, 200);
+        socket.emit("start");
+        setInterval(function () {socket.emit("data", sanple2);}, fps / 1000);
+      };
+
+      //soketto
+      socket.on("camon", function () {
+        console.log("herro");
+      });
+      let sanple2 = new chara_info(1, 200, 200, 0, "morecars1.png", 40, 30);
+      socket.on("data", function (info) {
+        draw_player(info);
+      });
+    </script>
+    <h1 id="sokudo">0</h1>
+    <h1 id="zahyou">x:0 y:0</h1>
+    <h1 id="chien">ping:**ms</h1>
+  </body>
+</html>

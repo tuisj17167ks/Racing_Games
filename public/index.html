@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>カーレース</title>
+    <meta charset="UTF-8" />
+    <style>
+      /*画像をかぶせて表示させる。*/
+      .canvas-wrapper {
+        position: relative;
+      }
+      .canvas-wrapper canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <script src="socket.io/socket.io.js"></script>
+    <canvas id="view" width="800px" height="500px"></canvas>
+    <script type="text/javascript">
+      var canvas = document.getElementById("view"); //canvasAPI使うためのやつ。絵が使えるも
+      var ctx = canvas.getContext("2d");
+      //ctxを使用するための変数
+      const chara = [new Image(),new Image(),new Image(),new Image()];
+      chara[0].src = "mycar.png";
+      chara[1].src = "morecars1.png";
+      chara[2].src = "morecars2.png";
+      chara[3].src = "morecars3.png";
+
+
+      const bac_image = new Image();
+
+      var socket = io.connect(); //node.jsを利用するための変数
+
+      let Previous_self = { x : 0 , y : 0};//衝突時進行を引き戻すよう変数
+      let Time = 0.0;//ゲーム内時間
+      let CheckPoint = [0,0,0,0,0];//コースのチェックポイントを管理する変数
+      let Check_total = 0;//全てのチェックポイントを通過している場合使用される
+      let Check_lap = 0;//現在プレイヤーが何周しているか表示する変数
+      let lap_time = [0,0,0];//一周にかかった時間
+      let speed = 0.0;//移動量
+      let limit = 5.0;//移動限界量
+      //キーボードの認識[w,s,a,d]
+      let key_move = [0, 0, 0, 0];
+      //描画速度
+      const fps = 60;
+      //プレイヤーの座標などを全て管理している
+      let chara_member = [];
+
+      let GAMESTERT = false;
+      //サーバからマップが送られると"true"となる用の変数
+      let map_view = false;
+
+      let My_car = null;//自身の操作している車の情報
+      let map_data = [];//サーバから送られるマップ情報を記録する
+
+      let date1 = new Date();
+
+      const chara_info = function (no,x,y,angle,image_name,size_width,size_height) {
+        this.no = no;
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.image_name = image_name;
+        this.size_width = size_width;
+        this.size_height = size_height;
+      };
+
+      //キャラクターをメンバーに追加する。angleの初期は0度であるため除外。
+      function chara_add(no, x, y, image_name, size_width, size_height) {
+        chara_member[chara_member.length]=new chara_info(no, x, y,0,image_name, size_width, size_height);
+      }
+
+      //描画
+      function draw_player(player) {
+        ctx.save();
+        ctx.translate(player.x + player.size_width / 2,player.y + player.size_height / 2);
+        ctx.rotate(player.angle);
+        ctx.translate(-player.x - player.size_width / 2,-player.y - player.size_height / 2);
+        ctx.drawImage(chara[player.no-1], player.x, player.y);
+        ctx.restore();
+
+        ctx.font = "25px serif";
+        ctx.fillText("Time:"+Math.floor(Time*10)/10,700,25,100);
+        if(Check_lap >= 1)ctx.fillText("1stTime:"+Math.floor(lap_time[0]*10)/10,700,50,100);
+        if(Check_lap >= 2)ctx.fillText("2ndTime:"+Math.floor(lap_time[1]*10)/10,700,75,100);
+        if(Check_lap >= 3)ctx.fillText("3rdTime:"+Math.floor(lap_time[2]*10)/10,700,100,100);
+        const myh1 = document.getElementById("sokudo");
+        myh1.innerHTML = "エンジン:" +Math.floor(speed * 100) / 100 + " 方向:" + Math.floor((chara_member[0].angle / Math.PI) * 180) +"゜";
+        const myh2 = document.getElementById("zahyou");
+        myh2.innerHTML = "X:" + parseInt(My_car.x) + " Y:" + parseInt(My_car.y) + " Ping:" + ping;
+        //console.log(CheckPoint[0],CheckPoint[1],CheckPoint[2],CheckPoint[3],CheckPoint[4]);
+      }
+
+      function PanelAction(Array_value){
+        if(Array_value==0){
+          My_car.y = Previous_self.y;
+          My_car.x = Previous_self.x;
+          speed -= 0.4;
+        }
+        if(Array_value==4){CheckPoint[0] = 1};
+        if(Array_value==5){if(CheckPoint[0] == 1)CheckPoint[1] = 1;}
+        if(Array_value==6){if (CheckPoint[1] == 1)CheckPoint[2] = 1;}
+        if(Array_value==7){if (CheckPoint[2] == 1)CheckPoint[3] = 1;};
+        if(Array_value==8){if (CheckPoint[3] == 1)CheckPoint[4] = 1;};
+        if(Array_value==9){              
+          total = CheckPoint.reduce(function(sum, element){
+            return sum + element;
+          }, 0);
+          if(total == 5){
+            CheckPoint = [0,0,0,0,0];
+            lap_time[Check_lap] = Time;
+            Check_lap++;
+            if(Check_lap >= 3)socket.emit("GOAL",);
+          }
+        }
+      }
+
+      //移動(操作キャラ限定)
+      function move() {
+        if(map_view == true){
+          Previous_self = {y:My_car.y,x:My_car.x}
+          My_car.y -= speed * Math.cos(My_car.angle);
+          My_car.x += speed * Math.sin(My_car.angle);
+          map_panel = map_data
+          [Math.floor((My_car.y )/10)+2]
+          [Math.floor((My_car.x)/10)+2];
+
+          PanelAction (map_panel);
+
+          if (key_move[2] == 1) My_car.angle -= 0.02;
+          if (key_move[3] == 1) My_car.angle += 0.02;
+
+        }
+      }
+
+      //加速(操作キャラ限定)
+      function Accelerat() {
+        if (key_move[0] == 1 && speed < limit) speed += 0.2;
+        if (key_move[0] == 0 && speed > 0.0) speed -= 0.5;
+        if (speed <= 0) speed = 0;
+      }
+
+      //マップ描画用の関数(60fpsで稼働させると重いので現在は画像を表示させて代用)
+      function map_drow(map){
+        if(map_view == true){
+          bac_image.src = "map1_fot.jpg";
+          ctx.drawImage(bac_image, 00, 00);
+          
+          for(let i = 0;i<map.length;i++){
+            for(let j = 0;j<map[i].length;j++){
+              if(map[i][j]=="0"){ctx.fillStyle = "#444444";};
+              if(map[i][j]=="1"){ctx.fillStyle = "#c5ffc8";};
+              if(map[i][j]=="2"){ctx.fillStyle = 'rgb(00,00,00)'};
+              if(map[i][j]=="3"){ctx.fillStyle = '#ffffff'};
+              if(map[i][j]=="9"){ctx.fillStyle = 'rgb(255,00,00)'};
+              //ctx.fillText(map[i][j],j*10,i*10,10);
+              //ctx.fillRect(j*10,i*10,10,10);
+            }
+          }
+        }
+      }
+
+      // キーボードを押したときに実行される関数
+      document.onkeydown = function (e) {
+        //A key
+        if (e.keyCode == 65) key_move[2] = 1;
+        //D key
+        if (e.keyCode == 68) key_move[3] = 1;
+        //W key
+        if (e.keyCode == 87) key_move[0] = 1;
+
+        if (e.keyCode == 83); //Skey
+        //if(GAMESTERT=false){
+
+        if (e.keyCode == 13 ){//ENTER
+
+          //Menu1
+          if(STERT_SESSION == 0){
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            socket.emit("Login");
+            STERT_SESSION++;
+            if(marcer/100-1==1){
+              STERT_MENU2();
+            }
+            else{
+              marcer = "未定"
+              interval = setInterval(WAIT_MENU,fps/1000);
+            }
+          }
+
+          //Menu2
+          else if(STERT_SESSION == 1){
+              STERT_SESSION++;
+              marcer = marcer/100-1;
+              socket.emit("ParticipationNamber",marcer);
+              interval = setInterval(WAIT_MENU,fps/1000);
+          }
+        }
+
+        if (e.keyCode == 37 && marcer > 200){
+          marcer-=100;
+          if(STERT_SESSION == 0)STERT_MENU();
+          else{STERT_MENU2();}
+        } //← key
+
+        if (e.keyCode == 39 && marcer < 500){
+          marcer+=100;
+          if(STERT_SESSION == 0)STERT_MENU();
+          else{STERT_MENU2();}
+        } //→ key
+        //}
+        //console.log(e.keyCode);
+        
+      };
+
+      // キーボードを離したときに実行される関数
+      document.onkeyup = function (e) {
+        //A key
+        if (e.keyCode == 65) key_move[2] = 0;
+        //S key
+        if (e.keyCode == 83) key_move[1] = 0;
+        //D key
+        if (e.keyCode == 68) key_move[3] = 0;
+        //W key
+        if (e.keyCode == 87) key_move[0] = 0;
+      };
+
+      let marcer = 200;
+      let STERT_SESSION = 0;
+      let ping = 0;
+      let interval;
+
+      function STERT_MENU(){
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "30px serif";
+        ctx.fillText("スタートメニュー(プレイヤー番号画面)",canvas.width/2-150,100,300);
+        ctx.font = "70px serif";
+        ctx.fillStyle = 'rgba(0, 0, 255)';
+        ctx.fillText("１",200,250,300);
+        ctx.fillText("２",300,250,300);
+        ctx.fillText("３",400,250,300);
+        ctx.fillText("４",500,250,300);
+        
+        ctx.font = "70px serif";
+        ctx.fillText("◎",marcer,310,300);
+        
+        ctx.font = "20px serif";
+        ctx.fillStyle = 'rgba(0, 0, 0)';
+        ctx.fillText("プレイヤー番号を選択してください",220,400,300);
+        ctx.fillText("(左キー,右キー,ENTER)",220,440,300);
+      }
+      function STERT_MENU2(){
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "30px serif";
+        ctx.fillText("スタートメニュー(参加人数画面)",canvas.width/2-150,100,300);
+        ctx.font = "70px serif";
+        ctx.fillStyle = 'rgba(0, 0, 255)';
+        ctx.fillText("１",200,250,300);
+        ctx.fillText("２",300,250,300);
+        ctx.fillText("３",400,250,300);
+        ctx.fillText("４",500,250,300);
+        
+        ctx.font = "70px serif";
+        ctx.fillText("◎",marcer,310,300);
+        
+        ctx.font = "20px serif";
+        ctx.fillStyle = 'rgba(0, 0, 0)';
+        ctx.fillText("プレイヤー人数を選択してください",220,400,300);
+        ctx.fillText("(左キー,右キー,ENTER)",220,440,300);
+      }
+      function WAIT_MENU(){
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "30px serif";
+        ctx.fillText("スタートメニュー(待機画面)",canvas.width/2-150,100,300);
+        ctx.font = "70px serif";
+        ctx.fillStyle = 'rgba(0, 0, 255)';
+        
+        ctx.font = "40px serif";
+        ctx.fillText(marcer+"人用ゲーム",250,200,300);
+        ctx.font = "70px serif";
+        ctx.fillText("待機中",250,300,300);
+        ctx.font = "20px serif";
+        ctx.fillStyle = 'rgba(0, 0, 0)';
+        ctx.fillText("操作",220,400,300);
+        ctx.fillText("Aキー：左ハンドル　Dキー：右ハンドル　Wキー：アクセル",220,440,300);
+        //setInterval(function(){socket.emit("check")},fps/1000);
+        socket.emit("waiting");
+      }
+ 
+      window.onload = function () {
+        //サーバにwindow読み込んだよって
+        STERT_MENU();
+      };
+
+      socket.on("initialization",function(map,chara_init){
+        for(let i = 0;i <= chara_init.length;i++){
+          chara_add(chara_init[i]);
+        }
+      });
+
+      socket.on("Yuser Nom",function(No){
+        marcer = No;
+        console.log(No);
+      });
+
+      socket.on("PingCheck",function(ms){
+        date1 = new Date();
+        ping = date1.getMilliseconds() - ms;
+        console.log(ms)
+      });
+      
+      socket.on("Start command", function (map) {
+        clearInterval(interval);
+        map_data = map;
+        chara_add(1, 55, 225, "mycar.png", 40, 30);
+        chara_add(2, 65, 225, "morecars1.png", 40, 30);
+        My_car = chara_member[0];
+        //draw_player(My_car);
+        map_view = true;
+        GAMESTERT = true;
+        console.log(chara_member[0]);
+
+        //fps速度で行う処理
+        setInterval(function () {
+          move();
+          My_car = chara_member[0];
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          map_drow(map_data);
+          draw_player(My_car);
+          for(let count = 0;count<chara_member.length;count++){
+            draw_player(chara_member[0]);
+            draw_player(chara_member[1]);
+          }
+          socket.emit(My_car);
+        }, fps / 1000);
+        //アクセルの加速
+        setInterval(Accelerat, 200);
+        
+        //時間の追加
+        setInterval(function(){
+          if(GAMESTERT == true)Time += 0.1;
+        },100);
+      });
+      
+    </script>
+    <h1 id="sokudo">0</h1>
+    <h1 id="zahyou">x:0 y:0</h1>
+    <h1 id="chien">ping:**ms</h1>
+  </body>
+</html>
